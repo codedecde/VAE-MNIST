@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.autograd as autograd
 import torch.nn.functional as F
 import numpy as np
-from keras.utils import Progbar
+from utils import Progbar
 import pdb
 
 data = sio.loadmat('mldata/mnist-original.mat')
