@@ -12,9 +12,12 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 
+BINARY = False
+
+
 data = sio.loadmat('mldata/mnist-original.mat')
 data_x = data['data'].transpose().astype(int)
-data_x = (data_x > 128).astype(int)
+data_x = (data_x > 128).astype(int) if BINARY else data_x
 
 train_x = data_x[:50000]
 index = range(train_x.shape[0])
@@ -40,14 +43,25 @@ class VAE(nn.Module):
         self.decoder_out = nn.Linear(self.n_dim, self.in_dim)
 
     def encode(self, x):
+        """
+        Encodes the input into latent mu and sigma
+            :params x: batch x n_in: the input image
+            :returns mu: batch x latent_dim: The conditional mean
+            :returns logvar: batch x latent_dim: The conditional log variance values of diag matrix
+        """
         e_h = F.tanh(self.encoder_nn1(x))
         mu = self.encoder_mu(e_h)
         logvar = self.encoder_logvar(e_h)
         return mu, logvar
 
     def decode(self, z):
+        """
+        Decodes the latent variable to reconstruct image
+            :param z: batch x latent_dim: The latent variable
+            :returns out: The reconstructed image
+        """
         o_h = F.tanh(self.decoder_nn1(z))
-        out = F.sigmoid(self.decoder_out(o_h))
+        out = F.sigmoid(self.decoder_out(o_h)) if BINARY else self.decoder_out(o_h)
         return out
 
     def forward(self, x):
@@ -66,7 +80,7 @@ class VAE(nn.Module):
 
     def generate(self, image=None):
         """
-            Generates sample using random seed if image is not given, else conditioned on the image
+        Generates sample using random seed if image is not given, else conditioned on the image
             :param image: 1 x input_dim: The image as generated
         """
         random_seed = np.random.multivariate_normal(np.zeros((self.latent_dim,)), np.eye(self.latent_dim, self.latent_dim), 1)
@@ -81,7 +95,7 @@ class VAE(nn.Module):
 
 def plot_image(new_image, original_image, filename, epoch):
     new_image = new_image.data.numpy().reshape((28, 28))
-    new_image = (new_image > 0.5).astype(int)
+    new_image = (new_image > 0.5).astype(int) if BINARY else new_image
     original_image = original_image.data.numpy().reshape((28, 28)) if original_image is not None else np.zeros((28, 28))
     fig, axes = plt.subplots(nrows=1, ncols=2)
     fig.suptitle('VAE MNIST EPOCH : %d' % epoch)
@@ -100,7 +114,7 @@ EPOCHS = 100
 BATCH_SIZE = 100
 GENERATE_AFTER = 5
 optimizer = torch.optim.Adagrad(vae.parameters(), lr=0.01)
-bce_loss = torch.nn.BCELoss()
+loss_function = torch.nn.BCELoss() if BINARY else torch.nn.MSELoss()
 steps = 0.
 n_steps = train_x.size(0) // BATCH_SIZE if (train_x.size(0) % BATCH_SIZE) == 0 else (train_x.size(0) // BATCH_SIZE) + 1
 T = EPOCHS * n_steps
@@ -112,10 +126,11 @@ for epoch in xrange(EPOCHS):
         optimizer.zero_grad()
         new_x, mu, logvar = vae.forward(batch_x)
         # Compute the loss
-        loss_generative = bce_loss(new_x, batch_x)
+        loss_generative = loss_function(new_x, batch_x)
         loss_kl = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
         # Normalizing by the number of reconstructions seems clutch.
-        # Doesn't work without it. Am not really sure why though ...
+        # Doesn't work without it for binary. Gives better results for gaussian.
+        # Am not really sure why though ...
         loss_kl /= BATCH_SIZE * 784
         loss = loss_generative + loss_kl
         loss.backward()
@@ -125,4 +140,5 @@ for epoch in xrange(EPOCHS):
     if (epoch + 1) % GENERATE_AFTER == 0:
         original_image = choice(val_x).view(1, -1)
         image = vae.generate(original_image)
-        plot_image(image, original_image, "Images/Image_epoch%d.png" % (epoch + 1), epoch + 1)
+        image_filename = "Images/Image_epoch%d.png" % (epoch + 1) if BINARY else "Images/Image_Gaussian_epoch%d.png" % (epoch + 1)
+        plot_image(image, original_image, image_filename, epoch + 1)
