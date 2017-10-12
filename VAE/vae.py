@@ -12,10 +12,10 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 
-BINARY = False
+BINARY = True
 
 
-data = sio.loadmat('mldata/mnist-original.mat')
+data = sio.loadmat('../mldata/mnist-original.mat')
 data_x = data['data'].transpose().astype(int)
 data_x = (data_x > 128).astype(int) if BINARY else data_x
 
