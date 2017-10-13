@@ -140,5 +140,5 @@ for epoch in xrange(EPOCHS):
     if (epoch + 1) % GENERATE_AFTER == 0:
         original_image = choice(val_x).view(1, -1)
         image = vae.generate(original_image)
-        image_filename = "Images/Image_epoch%d.png" % (epoch + 1) if BINARY else "Images/Image_Gaussian_epoch%d.png" % (epoch + 1)
+        image_filename = "../Images/Image_epoch%d.png" % (epoch + 1) if BINARY else "../Images/Image_Gaussian_epoch%d.png" % (epoch + 1)
         plot_image(image, original_image, image_filename, epoch + 1)
