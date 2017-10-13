@@ -7,7 +7,6 @@ import torch.nn.functional as F
 import torch.optim
 from utils import Progbar
 import numpy as np
-from torch.nn.utils import clip_grad_norm
 import pdb
 import matplotlib
 matplotlib.use('Agg')
@@ -18,13 +17,17 @@ WGAN = True  # The flag for setting WGAN
 NORMALIZE = True
 data = sio.loadmat('../mldata/mnist-original.mat')
 data_x = data['data'].transpose().astype(int)
-
 train_x = data_x[:50000]
 
 index = range(train_x.shape[0])
 shuffle(index)
 
-train_x = autograd.Variable(torch.Tensor(train_x[index]))
+# TORCH CONSTANTS
+use_cuda = torch.cuda.is_available()
+FLOAT_TENSOR = torch.cuda.FLOAT_TENSOR if use_cuda else torch.FLOAT_TENSOR
+LONG_TENSOR = torch.cuda.LONG_TENSOR if use_cuda else torch.LONG_TENSOR
+
+train_x = autograd.Variable(torch.Tensor(train_x[index]).dtype(FLOAT_TENSOR))
 if NORMALIZE:
     # Normalize data
     mu = train_x.mean(0)
@@ -32,9 +35,10 @@ if NORMALIZE:
     train_x_norm = (train_x - mu) / var
 
 val_x = data_x[50000:]
-val_x = autograd.Variable(torch.Tensor(val_x))
+val_x = autograd.Variable(torch.Tensor(val_x).dtype(FLOAT_TENSOR))
 if NORMALIZE:
     val_x = (val_x - mu) / var
+
 
 def plot_image(image, image_2, filename, epoch):
     image = image.data.numpy().reshape((28, 28))
@@ -61,7 +65,7 @@ class Generator(nn.Module):
         for ix in xrange(num_layers):
             indim = self.in_dim if ix == 0 else self.hidden_dim
             outdim = self.out_dim if ix == self.num_layers - 1 else self.hidden_dim
-            setattr(self, "nn_{}".format(ix), nn.Linear(indim, outdim))
+            setattr(self, "nn_{}".format(ix), nn.Linear(indim, outdim).dtype(FLOAT_TENSOR))
     def forward(self, noise):
         """
         Takes in noise and generates image
@@ -80,8 +84,8 @@ class Discriminator(nn.Module):
         super(Discriminator, self).__init__()
         self.in_dim = in_dim
         self.hidden_dim = hidden_dim
-        self.nn1 = nn.Linear(in_dim, hidden_dim)
-        self.nn2 = nn.Linear(hidden_dim, 1)
+        self.nn1 = nn.Linear(in_dim, hidden_dim).dtype(FLOAT_TENSOR)
+        self.nn2 = nn.Linear(hidden_dim, 1).dtype(FLOAT_TENSOR)
     
     def _forward(self, image):
         """
@@ -127,9 +131,14 @@ PLOT_AFTER = 1000
 batch_ix = 0
 
 
+def get_numpy(array):
+    return array.data.cpu().numpy()[0] if use_cuda else array.data.numpy()[0]
+
+
 def zero_grad(*opts):
     for opt in opts:
         opt.zero_grad()
+
 
 bar = Progbar(ITERATIONS)
 for epoch in xrange(ITERATIONS):
@@ -140,10 +149,10 @@ for epoch in xrange(ITERATIONS):
         batch_ix += BATCH_SIZE
         if batch_ix >= train_x.size(0):
             batch_ix = 0
-        random_seed = autograd.Variable(torch.randn(data_sample.size(0), IN_DIM))
+        random_seed = autograd.Variable(torch.randn(data_sample.size(0), IN_DIM).dtype(FLOAT_TENSOR))
         generator_images = generator(random_seed)
         loss_d = discriminator(generator_images, data_sample)
-        average_training_loss += loss_d.data.numpy()[0]
+        average_training_loss += get_numpy(loss_d)
         loss_d.backward()
         optimizer_discriminator.step()
         for p in discriminator.parameters():
@@ -151,16 +160,16 @@ for epoch in xrange(ITERATIONS):
         zero_grad(optimizer_generator, optimizer_discriminator)
     average_training_loss /= TRAIN_STEPS
     # Generator
-    random_seed = autograd.Variable(torch.randn(BATCH_SIZE, IN_DIM))
+    random_seed = autograd.Variable(torch.randn(BATCH_SIZE, IN_DIM).dtype(FLOAT_TENSOR))
     # loss_g = -1. * torch.sum(torch.log(discriminator._forward(generator(random_seed)))) / random_seed.size(0)
     loss_g = -torch.mean(discriminator._forward(generator(random_seed)))
     loss_g.backward()
     optimizer_generator.step()
     zero_grad(optimizer_generator, optimizer_discriminator)
     bar.update(epoch + 1, values=[("Discriminator Error", average_training_loss),
-                                  ("Generator Error", loss_g.data.numpy()[0])])
+                                  ("Generator Error", get_numpy(loss_g))])
     if ((epoch + 1) % PLOT_AFTER) == 0:
-        random_seed = autograd.Variable(torch.randn(BATCH_SIZE, IN_DIM))
+        random_seed = autograd.Variable(torch.randn(BATCH_SIZE, IN_DIM).dtype(FLOAT_TENSOR))
         generated_images = generator(random_seed)
         filename = "../Images_GAN/Image_Epoch_%d.png" % (epoch + 1)
         if NORMALIZE:
